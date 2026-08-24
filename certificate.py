@@ -101,43 +101,35 @@ def generate_certificate(
     # Фон
     _draw_background(c)
 
-    # Светлая плашка перекрывает текст на фоне, чтобы данные сертификата читались.
-    c.setFillColorRGB(1, 1, 1)
-    c.setFillAlpha(1)
-    c.roundRect(36, 480, 340, 360, 18, fill=1, stroke=0)
-    c.setFillAlpha(1)
+    def text_shadow(text: str, x: float, y: float, size: int, font_name: str, color=(1, 1, 1)):
+        c.setFont(font_name, size)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFillAlpha(0.75)
+        c.drawCentredString(x + 1.4, y - 1.4, text)
+        c.setFillAlpha(1)
+        c.setFillColorRGB(*color)
+        c.drawCentredString(x, y, text)
 
-    # Заголовок
-    c.setFillColorRGB(0.15, 0.12, 0.2)
-    c.setFont(font_bold, 20)
-    c.drawCentredString(206, 800, "ПОДАРОЧНЫЙ СЕРТИФИКАТ")
+    def field(label: str, value: str, y: float, value_size: int = 18):
+        c.setFillColorRGB(0.02, 0.03, 0.04)
+        c.setFillAlpha(0.58)
+        c.roundRect(92, y - 18, PAGE_W - 184, 58, 14, fill=1, stroke=0)
+        c.setFillAlpha(1)
+        text_shadow(label, PAGE_W / 2, y + 17, 10, font)
+        text_shadow(value, PAGE_W / 2, y - 5, value_size, font_bold)
 
-    c.setStrokeColorRGB(0.55, 0.45, 0.25)
-    c.setLineWidth(1.2)
-    c.line(70, 788, 340, 788)
+    text_shadow("ПОДАРОЧНЫЙ СЕРТИФИКАТ", PAGE_W / 2, 804, 24, font_bold)
+    c.setStrokeColorRGB(0.78, 0.65, 0.34)
+    c.setLineWidth(1.4)
+    c.line(148, 790, PAGE_W - 148, 790)
 
-    def label_value(label: str, value: str, y: float):
-        c.setFillColorRGB(0.35, 0.32, 0.4)
-        c.setFont(font, 11)
-        c.drawString(55, y + 22, label)
-        c.setFillColorRGB(0.12, 0.1, 0.16)
-        c.setFont(font_bold, 15)
-        c.drawString(55, y, value)
-        c.setStrokeColorRGB(0.7, 0.65, 0.55)
-        c.setLineWidth(0.6)
-        c.line(55, y - 6, 350, y - 6)
+    field("Кому", recipient, 720)
+    field("Вид массажа", massage_type, 650)
+    field("Количество массажей", quantity, 580)
+    field("Срок действия", valid_until, 510)
 
-    label_value("Кому", recipient, 740)
-    label_value("Вид массажа", massage_type, 680)
-    label_value("Количество массажей", quantity, 620)
-    label_value("Срок действия", valid_until, 560)
-
-    # Подпись массажиста
-    c.setFillColorRGB(0.2, 0.18, 0.25)
-    c.setFont(font, 10)
-    c.drawString(55, 510, "Ваш массажист")
-    c.setFont(font_bold, 12)
-    c.drawString(55, 494, THERAPIST)
+    text_shadow("Ваш массажист", PAGE_W / 2, 430, 11, font)
+    text_shadow(THERAPIST, PAGE_W / 2, 407, 15, font_bold)
 
     # Нижний блок с контактами на тёмном фоне
     c.setFillColorRGB(0, 0, 0)
