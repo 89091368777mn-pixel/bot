@@ -32,16 +32,20 @@ def _register_fonts():
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
     ]
     bold_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
     ]
     regular = next((p for p in regular_paths if Path(p).exists()), None)
     bold = next((p for p in bold_paths if Path(p).exists()), regular)
     if not regular:
-        return "Helvetica", "Helvetica-Bold"
+        raise RuntimeError("Не найден TTF-шрифт с поддержкой кириллицы")
     pdfmetrics.registerFont(TTFont("CertFont", regular))
     pdfmetrics.registerFont(TTFont("CertFont-Bold", bold))
     return "CertFont", "CertFont-Bold"
