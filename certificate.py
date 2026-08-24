@@ -143,12 +143,12 @@ def generate_certificate(
         c.setFillColorRGB(*color)
         c.drawCentredString(x, y, text)
 
-    def field(label: str, value: str, y: float, value_size: float = 15):
-        text_shadow(label, PAGE_W / 2, y + 15, 9, font_italic, (0.93, 0.84, 0.67))
+    def field(label: str, value: str, y: float, value_size: float = 16.5):
+        text_shadow(label, PAGE_W / 2, y + 15, 10, font_italic, (0.93, 0.84, 0.67))
         text_shadow(value, PAGE_W / 2, y - 4, value_size, font_bold_italic)
 
     # 0.5 cm = 14.17 pt: title and underline move up together.
-    text_shadow("ПОДАРОЧНЫЙ СЕРТИФИКАТ", PAGE_W / 2, 818.2, 22, font_bold_italic)
+    text_shadow("ПОДАРОЧНЫЙ СЕРТИФИКАТ", PAGE_W / 2, 818.2, 23.5, font_bold_italic)
     c.setStrokeColorRGB(0.78, 0.65, 0.34)
     c.setLineWidth(1.4)
     c.line(148, 804.2, PAGE_W - 148, 804.2)
@@ -163,13 +163,13 @@ def generate_certificate(
     c.rect(0, 0, PAGE_W, 108, fill=1, stroke=0)
     c.setFillAlpha(1)
 
-    text_shadow("Ваш массажист", PAGE_W / 2, 132, 9, font_italic, (0.93, 0.84, 0.67))
-    text_shadow(THERAPIST, PAGE_W / 2, 114, 13, font_bold_italic)
-    text_shadow("Срок действия сертификата", PAGE_W / 2, 88, 8.5, font_italic, (0.93, 0.84, 0.67))
-    text_shadow(valid_until, PAGE_W / 2, 70, 11.5, font_bold_italic)
-    text_shadow("Свяжитесь, чтобы договориться о сеансе", PAGE_W / 2, 48, 9, font_italic)
-    text_shadow(PHONE, PAGE_W / 2, 28, 11, font_bold_italic)
-    text_shadow(ADDRESS, PAGE_W / 2, 12, 8, font_italic)
+    text_shadow("Ваш массажист", PAGE_W / 2, 132, 10, font_italic, (0.93, 0.84, 0.67))
+    text_shadow(THERAPIST, PAGE_W / 2, 114, 14.5, font_bold_italic)
+    text_shadow("Срок действия сертификата", PAGE_W / 2, 88, 9.5, font_italic, (0.93, 0.84, 0.67))
+    text_shadow(valid_until, PAGE_W / 2, 70, 13, font_bold_italic)
+    text_shadow("Свяжитесь, чтобы договориться о сеансе", PAGE_W / 2, 48, 10, font_italic)
+    text_shadow(PHONE, PAGE_W / 2, 28, 12, font_bold_italic)
+    text_shadow(ADDRESS, PAGE_W / 2, 12, 9, font_italic)
 
     c.save()
     return out_path
