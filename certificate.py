@@ -157,15 +157,14 @@ def generate_certificate(
     field("Вид массажа", massage_type, 660)
     field("Количество массажей", quantity, 572)
 
-    text_shadow("Ваш массажист", PAGE_W / 2, 498, 9, font_italic, (0.93, 0.84, 0.67))
-    text_shadow(THERAPIST, PAGE_W / 2, 477, 13, font_bold_italic)
-
     # Нижний блок с контактами на тёмном фоне
     c.setFillColorRGB(0, 0, 0)
     c.setFillAlpha(0.45)
     c.rect(0, 0, PAGE_W, 108, fill=1, stroke=0)
     c.setFillAlpha(1)
 
+    text_shadow("Ваш массажист", PAGE_W / 2, 132, 9, font_italic, (0.93, 0.84, 0.67))
+    text_shadow(THERAPIST, PAGE_W / 2, 114, 13, font_bold_italic)
     text_shadow("Срок действия сертификата", PAGE_W / 2, 88, 8.5, font_italic, (0.93, 0.84, 0.67))
     text_shadow(valid_until, PAGE_W / 2, 70, 11.5, font_bold_italic)
     text_shadow("Свяжитесь, чтобы договориться о сеансе", PAGE_W / 2, 48, 9, font_italic)
