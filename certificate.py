@@ -1,144 +1,106 @@
-"""
-Генерация подарочного сертификата PDF.
-Фон — из вашего макета, поверх — поля и данные.
-"""
-
 from pathlib import Path
-
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
-
-ASSETS = Path(__file__).parent / "assets"
-BG_PATH = ASSETS / "cert_bg.jpg"
-OUTPUT_DIR = Path(__file__).parent / "certificates"
+ASSETS = Path(__file__).parent / &quot;assets&quot;
+BG_PATH = ASSETS / &quot;cert_bg.jpg&quot;
+OUTPUT_DIR = Path(__file__).parent / &quot;certificates&quot;
 OUTPUT_DIR.mkdir(exist_ok=True)
-
 PAGE_W = 633
 PAGE_H = 897
 
-THERAPIST = "Новосёлов Михаил Сергеевич"
-PHONE = "+7 (999) 656-12-34"
-ADDRESS = "ул. Несебрская, 4, Сочи"
-
-
-def _register_fonts():
-    regular_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-    ]
-    bold_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-    ]
-    regular = next((p for p in regular_paths if Path(p).exists()), None)
-    bold = next((p for p in bold_paths if Path(p).exists()), regular)
-    if not regular:
-        return "Helvetica", "Helvetica-Bold"
-    pdfmetrics.registerFont(TTFont("CertFont", regular))
-    pdfmetrics.registerFont(TTFont("CertFont-Bold", bold))
-    return "CertFont", "CertFont-Bold"
-
+def register_font():
+font_path = &quot;/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf&quot;
+bold_path = &quot;/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf&quot;
+if not Path(font_path).exists():
+raise RuntimeError(&quot;Не найден кириллический шрифт DejaVuSans&quot;)
+pdfmetrics.registerFont(TTFont(&quot;DejaVu&quot;, font_path))
+if Path(bold_path).exists():
+pdfmetrics.registerFont(TTFont(&quot;DejaVuBold&quot;, bold_path))
+return &quot;DejaVu&quot;, &quot;DejaVuBold&quot;
+return &quot;DejaVu&quot;, &quot;DejaVu&quot;
 
 def generate_certificate(
-    recipient: str,
-    massage_type: str,
-    quantity: str,
-    valid_until: str,
-    filename: str | None = None,
-) -> Path:
-    """
-    Создаёт PDF-сертификат.
+recipient: str,
+massage_type: str,
+quantity: str,
+valid_until: str,
+filename: str | None = None,
+) -&gt; Path:
+font, font_bold = register_font()
+if not BG_PATH.exists():
+raise FileNotFoundError(
 
-    recipient     — имя получателя
-    massage_type  — вид массажа
-    quantity      — например «3 сеанса»
-    valid_until   — например «до 31.12.2026»
-    """
-    font, font_bold = _register_fonts()
+f&quot;Не найден фон сертификата: {BG_PATH}&quot;
+)
+if not filename:
+safe_name = &quot;&quot;.join(
+c if c.isalnum() or c in &quot;-_&quot; else &quot;_&quot;
+for c in recipient
+)[:40]
+filename = f&quot;cert_{safe_name}.pdf&quot;
+output_path = OUTPUT_DIR / filename
+pdf = canvas.Canvas(
+str(output_path),
+pagesize=(PAGE_W, PAGE_H),
+)
+# Оригинальный сертификат на всю страницу
+pdf.drawImage(
+ImageReader(str(BG_PATH)),
+0,
+0,
+width=PAGE_W,
+height=PAGE_H,
+preserveAspectRatio=False,
+)
+# Цвет текста
+pdf.setFillColorRGB(1, 1, 1)
+# ------------------------------
+# КОМУ
+# ------------------------------
+pdf.setFont(font_bold, 15)
+pdf.drawString(
+145,
+560,
+recipient,
+)
+# ------------------------------
+# ВИД МАССАЖА
+# ------------------------------
+pdf.setFont(font, 14)
 
-    if not filename:
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in recipient)[:40]
-        filename = f"cert_{safe}.pdf"
+pdf.drawString(
+145,
+515,
+massage_type,
+)
+# ------------------------------
+# КОЛИЧЕСТВО
+# ------------------------------
+pdf.setFont(font, 14)
+pdf.drawString(
+145,
+470,
+quantity,
+)
+# ------------------------------
+# СРОК ДЕЙСТВИЯ
+# ------------------------------
+pdf.setFont(font, 14)
+pdf.drawString(
+145,
+425,
+valid_until,
+)
+pdf.save()
+return output_path
 
-    out_path = OUTPUT_DIR / filename
-    c = canvas.Canvas(str(out_path), pagesize=(PAGE_W, PAGE_H))
-
-    # Фон
-    if BG_PATH.exists():
-        c.drawImage(
-            ImageReader(str(BG_PATH)),
-            0, 0, width=PAGE_W, height=PAGE_H,
-            preserveAspectRatio=True, anchor="c",
-        )
-    else:
-        c.setFillColorRGB(0.1, 0.08, 0.15)
-        c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-
-    # Полупрозрачная плашка слева для читаемости текста
-    c.setFillColorRGB(1, 1, 1)
-    c.setFillAlpha(0.72)
-    c.roundRect(36, 480, 340, 360, 18, fill=1, stroke=0)
-    c.setFillAlpha(1)
-
-    # Заголовок
-    c.setFillColorRGB(0.15, 0.12, 0.2)
-    c.setFont(font_bold, 20)
-    c.drawCentredString(206, 800, "ПОДАРОЧНЫЙ СЕРТИФИКАТ")
-
-    c.setStrokeColorRGB(0.55, 0.45, 0.25)
-    c.setLineWidth(1.2)
-    c.line(70, 788, 340, 788)
-
-    def label_value(label: str, value: str, y: float):
-        c.setFillColorRGB(0.35, 0.32, 0.4)
-        c.setFont(font, 11)
-        c.drawString(55, y + 22, label)
-        c.setFillColorRGB(0.12, 0.1, 0.16)
-        c.setFont(font_bold, 15)
-        c.drawString(55, y, value)
-        c.setStrokeColorRGB(0.7, 0.65, 0.55)
-        c.setLineWidth(0.6)
-        c.line(55, y - 6, 350, y - 6)
-
-    label_value("Кому", recipient, 740)
-    label_value("Вид массажа", massage_type, 680)
-    label_value("Количество массажей", quantity, 620)
-    label_value("Срок действия", valid_until, 560)
-
-    # Подпись массажиста
-    c.setFillColorRGB(0.2, 0.18, 0.25)
-    c.setFont(font, 10)
-    c.drawString(55, 510, "Ваш массажист")
-    c.setFont(font_bold, 12)
-    c.drawString(55, 494, THERAPIST)
-
-    # Нижний блок с контактами на тёмном фоне
-    c.setFillColorRGB(0, 0, 0)
-    c.setFillAlpha(0.45)
-    c.rect(0, 0, PAGE_W, 70, fill=1, stroke=0)
-    c.setFillAlpha(1)
-
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont(font, 10)
-    c.drawCentredString(PAGE_W / 2, 42, "Свяжитесь, чтобы договориться о сеансе")
-    c.setFont(font_bold, 13)
-    c.drawCentredString(PAGE_W / 2, 24, PHONE)
-    c.setFont(font, 9)
-    c.drawCentredString(PAGE_W / 2, 10, ADDRESS)
-
-    c.save()
-    return out_path
-
-
-if __name__ == "__main__":
-    path = generate_certificate(
-        recipient="Анна Иванова",
-        massage_type="Массаж будущего",
-        quantity="3 сеанса",
-        valid_until="до 31.12.2026",
-    )
-    print("Created:", path)
+if __name__ == &quot;__main__&quot;:
+result = generate_certificate(
+recipient=&quot;Иванов Александр&quot;,
+massage_type=&quot;Массаж будущего&quot;,
+quantity=&quot;1 сеанс&quot;,
+valid_until=&quot;до 30.12.2026&quot;,
+)
+print(result)
