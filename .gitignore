@@ -1,0 +1,10 @@
+.env
+venv/
+__pycache__/
+*.pyc
+*.db
+certificates/*.pdf
+*.log
+.DS_Store
+bot.py.bak
+bot_new.py
