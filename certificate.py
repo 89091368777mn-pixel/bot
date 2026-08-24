@@ -111,10 +111,6 @@ def generate_certificate(
         c.drawCentredString(x, y, text)
 
     def field(label: str, value: str, y: float, value_size: int = 18):
-        c.setFillColorRGB(0.02, 0.03, 0.04)
-        c.setFillAlpha(0.58)
-        c.roundRect(92, y - 18, PAGE_W - 184, 58, 14, fill=1, stroke=0)
-        c.setFillAlpha(1)
         text_shadow(label, PAGE_W / 2, y + 17, 10, font)
         text_shadow(value, PAGE_W / 2, y - 5, value_size, font_bold)
 
@@ -123,13 +119,18 @@ def generate_certificate(
     c.setLineWidth(1.4)
     c.line(148, 790, PAGE_W - 148, 790)
 
-    field("Кому", recipient, 720)
-    field("Вид массажа", massage_type, 650)
-    field("Количество массажей", quantity, 580)
-    field("Срок действия", valid_until, 510)
+    c.setFillColorRGB(0.02, 0.03, 0.04)
+    c.setFillAlpha(0.72)
+    c.roundRect(116, 432, PAGE_W - 232, 324, 18, fill=1, stroke=0)
+    c.setFillAlpha(1)
 
-    text_shadow("Ваш массажист", PAGE_W / 2, 430, 11, font)
-    text_shadow(THERAPIST, PAGE_W / 2, 407, 15, font_bold)
+    field("Кому", recipient, 700)
+    field("Вид массажа", massage_type, 636)
+    field("Количество массажей", quantity, 572)
+    field("Срок действия", valid_until, 508)
+
+    text_shadow("Ваш массажист", PAGE_W / 2, 462, 11, font)
+    text_shadow(THERAPIST, PAGE_W / 2, 439, 15, font_bold)
 
     # Нижний блок с контактами на тёмном фоне
     c.setFillColorRGB(0, 0, 0)
