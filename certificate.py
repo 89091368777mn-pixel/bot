@@ -42,13 +42,31 @@ def _register_fonts():
         "C:/Windows/Fonts/arialbd.ttf",
         "C:/Windows/Fonts/segoeuib.ttf",
     ]
+    italic_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansOblique.ttf",
+        "C:/Windows/Fonts/ariali.ttf",
+        "C:/Windows/Fonts/segoeuii.ttf",
+    ]
+    bold_italic_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBoldOblique.ttf",
+        "C:/Windows/Fonts/arialbi.ttf",
+        "C:/Windows/Fonts/segoeuiz.ttf",
+    ]
     regular = next((p for p in regular_paths if Path(p).exists()), None)
     bold = next((p for p in bold_paths if Path(p).exists()), regular)
+    italic = next((p for p in italic_paths if Path(p).exists()), regular)
+    bold_italic = next((p for p in bold_italic_paths if Path(p).exists()), italic)
     if not regular:
         raise RuntimeError("Не найден TTF-шрифт с поддержкой кириллицы")
     pdfmetrics.registerFont(TTFont("CertFont", regular))
     pdfmetrics.registerFont(TTFont("CertFont-Bold", bold))
-    return "CertFont", "CertFont-Bold"
+    pdfmetrics.registerFont(TTFont("CertFont-Italic", italic))
+    pdfmetrics.registerFont(TTFont("CertFont-BoldItalic", bold_italic))
+    return "CertFont", "CertFont-Bold", "CertFont-Italic", "CertFont-BoldItalic"
 
 
 def _draw_background(c: canvas.Canvas):
@@ -89,7 +107,7 @@ def generate_certificate(
     quantity      — например «3 сеанса»
     valid_until   — например «до 31.12.2026»
     """
-    font, font_bold = _register_fonts()
+    font, font_bold, font_italic, font_bold_italic = _register_fonts()
 
     if not filename:
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in recipient)[:40]
@@ -101,50 +119,58 @@ def generate_certificate(
     # Фон
     _draw_background(c)
 
-    def text_shadow(text: str, x: float, y: float, size: int, font_name: str, color=(1, 1, 1)):
+    def fitted_size(text: str, font_name: str, size: float, max_width: float) -> float:
+        while size > 9 and pdfmetrics.stringWidth(text, font_name, size) > max_width:
+            size -= 0.5
+        return size
+
+    def text_shadow(
+        text: str,
+        x: float,
+        y: float,
+        size: float,
+        font_name: str,
+        color=(1, 1, 1),
+        max_width: float = 510,
+    ):
+        size = fitted_size(text, font_name, size, max_width)
         c.setFont(font_name, size)
         c.setFillColorRGB(0, 0, 0)
-        c.setFillAlpha(0.75)
-        c.drawCentredString(x + 1.4, y - 1.4, text)
+        c.setFillAlpha(0.8)
+        for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            c.drawCentredString(x + dx, y + dy, text)
         c.setFillAlpha(1)
         c.setFillColorRGB(*color)
         c.drawCentredString(x, y, text)
 
-    def field(label: str, value: str, y: float, value_size: int = 18):
-        text_shadow(label, PAGE_W / 2, y + 17, 10, font)
-        text_shadow(value, PAGE_W / 2, y - 5, value_size, font_bold)
+    def field(label: str, value: str, y: float, value_size: float = 15):
+        text_shadow(label, PAGE_W / 2, y + 15, 9, font_italic, (0.93, 0.84, 0.67))
+        text_shadow(value, PAGE_W / 2, y - 4, value_size, font_bold_italic)
 
-    text_shadow("ПОДАРОЧНЫЙ СЕРТИФИКАТ", PAGE_W / 2, 804, 24, font_bold)
+    # 0.5 cm = 14.17 pt: title and underline move up together.
+    text_shadow("ПОДАРОЧНЫЙ СЕРТИФИКАТ", PAGE_W / 2, 818.2, 22, font_bold_italic)
     c.setStrokeColorRGB(0.78, 0.65, 0.34)
     c.setLineWidth(1.4)
-    c.line(148, 790, PAGE_W - 148, 790)
-
-    c.setFillColorRGB(0.02, 0.03, 0.04)
-    c.setFillAlpha(0.72)
-    c.roundRect(116, 432, PAGE_W - 232, 324, 18, fill=1, stroke=0)
-    c.setFillAlpha(1)
+    c.line(148, 804.2, PAGE_W - 148, 804.2)
 
     field("Кому", recipient, 700)
-    field("Вид массажа", massage_type, 636)
+    field("Вид массажа", massage_type, 660)
     field("Количество массажей", quantity, 572)
-    field("Срок действия", valid_until, 508)
 
-    text_shadow("Ваш массажист", PAGE_W / 2, 462, 11, font)
-    text_shadow(THERAPIST, PAGE_W / 2, 439, 15, font_bold)
+    text_shadow("Ваш массажист", PAGE_W / 2, 498, 9, font_italic, (0.93, 0.84, 0.67))
+    text_shadow(THERAPIST, PAGE_W / 2, 477, 13, font_bold_italic)
 
     # Нижний блок с контактами на тёмном фоне
     c.setFillColorRGB(0, 0, 0)
     c.setFillAlpha(0.45)
-    c.rect(0, 0, PAGE_W, 70, fill=1, stroke=0)
+    c.rect(0, 0, PAGE_W, 108, fill=1, stroke=0)
     c.setFillAlpha(1)
 
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont(font, 10)
-    c.drawCentredString(PAGE_W / 2, 42, "Свяжитесь, чтобы договориться о сеансе")
-    c.setFont(font_bold, 13)
-    c.drawCentredString(PAGE_W / 2, 24, PHONE)
-    c.setFont(font, 9)
-    c.drawCentredString(PAGE_W / 2, 10, ADDRESS)
+    text_shadow("Срок действия сертификата", PAGE_W / 2, 88, 8.5, font_italic, (0.93, 0.84, 0.67))
+    text_shadow(valid_until, PAGE_W / 2, 70, 11.5, font_bold_italic)
+    text_shadow("Свяжитесь, чтобы договориться о сеансе", PAGE_W / 2, 48, 9, font_italic)
+    text_shadow(PHONE, PAGE_W / 2, 28, 11, font_bold_italic)
+    text_shadow(ADDRESS, PAGE_W / 2, 12, 8, font_italic)
 
     c.save()
     return out_path
