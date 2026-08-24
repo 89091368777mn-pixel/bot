@@ -101,9 +101,9 @@ def generate_certificate(
     # Фон
     _draw_background(c)
 
-    # Полупрозрачная плашка слева для читаемости текста
+    # Светлая плашка перекрывает текст на фоне, чтобы данные сертификата читались.
     c.setFillColorRGB(1, 1, 1)
-    c.setFillAlpha(0.72)
+    c.setFillAlpha(1)
     c.roundRect(36, 480, 340, 360, 18, fill=1, stroke=0)
     c.setFillAlpha(1)
 
