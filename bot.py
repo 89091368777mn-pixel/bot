@@ -54,6 +54,7 @@ SERVICES = {
 
 # Ссылки и контакты
 WEBSITE = "https://massage-future-sochi.ru/"
+BANYA_PAGE = "https://massage-future-sochi.ru/page128410476.html"
 DIKIDI = "https://dikidi.ru/1237678"
 DIKIDI_FIRST = "https://dikidi.ru/1237678"  # Онлайн-запись (полная ссылка)
 ADDRESS = "ул. Несебрская, 4, центр Сочи"
@@ -442,6 +443,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🎁 5 признаков"),
         KeyboardButton(text="🧘 Упражнения для шеи"),
     )
+    builder.row(KeyboardButton(text="🔥 Бизнес-баня"))
     builder.row(
         KeyboardButton(text="👤 Обо мне"),
         KeyboardButton(text="💅 Услуги и цены"),
@@ -506,6 +508,14 @@ def after_magnet_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📅 Записаться на первую встречу", url=DIKIDI_FIRST))
     builder.row(InlineKeyboardButton(text="💅 Посмотреть услуги", callback_data="show_services"))
+    return builder.as_markup()
+
+
+def banya_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔥 Подробнее про бизнес-баню", url=BANYA_PAGE))
+    builder.row(InlineKeyboardButton(text="💬 Написать в Telegram", url=TG_CONTACT))
+    builder.row(InlineKeyboardButton(text="📅 Записаться в Dikidi", url=DIKIDI_FIRST))
     return builder.as_markup()
 
 
@@ -673,6 +683,58 @@ async def show_services(event: Message | CallbackQuery, state: FSMContext):
     else:
         await event.answer(text, parse_mode="HTML", reply_markup=dikidi_kb())
         await event.answer("Выберите действие:", reply_markup=main_menu_kb())
+
+
+# ---------- Бизнес-баня ----------
+
+@router.message(F.text == "🔥 Бизнес-баня")
+async def business_banya(message: Message, state: FSMContext):
+    await state.clear()
+    await save_lead(
+        message.from_user.id,
+        message.from_user.username,
+        message.from_user.first_name,
+    )
+
+    text = (
+        "🔥 <b>Бизнес-баня + Массаж будущего</b>\n\n"
+        "15-минутная диагностика перед сессией у вашей бани в Сочи. "
+        "Это не медицинская диагностика, а короткий разбор цели, состояния "
+        "и подходящего формата восстановления.\n\n"
+        "<b>Кому подходит:</b>\n"
+        "• бизнесменам после переговоров, перелётов и плотного графика\n"
+        "• спортсменам после нагрузки\n"
+        "• женщинам и мужчинам 30–55, если тело держит напряжение\n"
+        "• детям от 6 лет — только вместе с родителем и в мягком формате\n\n"
+        "<b>Что дальше:</b>\n"
+        "1. Связываюсь в течение 15 минут в рабочее время\n"
+        "2. Уточняю цель и подбираю формат сессии\n"
+        "3. Согласуем дату, время и место — у вашей бани в Сочи\n\n"
+        "<b>Ответьте одним сообщением:</b>\n"
+        "1. Для кого сессия: вы, семья, команда, гости?\n"
+        "2. Главная цель: расслабление, восстановление, спина/шея, спорт, стресс?\n"
+        "3. Где баня и когда удобно?\n\n"
+        "Если есть хронические заболевания, травмы, температура, беременность "
+        "или сомнения по бане/массажу — напишите заранее, чтобы подобрать безопасный формат."
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=banya_kb())
+    await message.answer(
+        "Можно написать кодовое слово <b>БАНЯ</b> и коротко описать задачу.",
+        parse_mode="HTML",
+        reply_markup=main_menu_kb(),
+    )
+
+    if ADMIN_ID:
+        try:
+            u = message.from_user
+            await message.bot.send_message(
+                int(ADMIN_ID),
+                f"🔥 Интерес к бизнес-бане\n"
+                f"от @{u.username or '—'} (id {u.id}) · {u.first_name or ''}\n"
+                f"Страница: {BANYA_PAGE}",
+            )
+        except Exception:
+            logger.exception("Не удалось отправить уведомление админу по бизнес-бане")
 
 
 # ---------- Подарочный сертификат ----------
@@ -1127,7 +1189,9 @@ async def process_text(message: Message, state: FSMContext, text: str):
         await message.answer("Сейчас идёт запись. Ответьте текстом или нажмите «❌ Отмена».", reply_markup=cancel_kb())
         return
     lower = text.lower()
-    if any(w in lower for w in ["запис", "хочу", "запись"]):
+    if any(w in lower for w in ["баня", "бани", "бизнес-бан", "сауна"]):
+        await business_banya(message, state)
+    elif any(w in lower for w in ["запис", "хочу", "запись"]):
         await start_booking(message, state)
     elif any(w in lower for w in ["упражнен", "шея", "плеч"]):
         await lead_magnet_exercises(message, state)
@@ -1146,7 +1210,7 @@ async def process_text(message: Message, state: FSMContext, text: str):
     else:
         await message.answer(
             f"Понял: «{text}»\n\nИспользуйте меню или скажите:\n"
-            "• Хочу записаться · 5 признаков · Упражнения · Сертификат · Отзывы",
+            "• Хочу записаться · БАНЯ · 5 признаков · Упражнения · Сертификат · Отзывы",
             reply_markup=main_menu_kb(),
         )
 
