@@ -189,6 +189,211 @@ async def get_bookings_for_date(date: str) -> list:
         return [dict(r) for r in await cursor.fetchall()]
 
 
+async def admin_metrics(days: int = 30) -> dict:
+    days = max(days, 1)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM leads")
+        leads_total = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM leads WHERE created_at >= datetime('now', ?)", (f"-{days} days",))
+        leads_period = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM bookings")
+        bookings_total = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM bookings WHERE status = 'active'")
+        active_bookings = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM bookings WHERE status = 'cancelled'")
+        cancelled_bookings = (await cursor.fetchone())[0]
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM bookings WHERE created_at >= datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        bookings_period = (await cursor.fetchone())[0]
+    conversion = round(bookings_period * 100 / leads_period, 1) if leads_period else 0.0
+    return {
+        "days": days,
+        "leads_total": leads_total,
+        "leads_period": leads_period,
+        "bookings_total": bookings_total,
+        "bookings_period": bookings_period,
+        "active_bookings": active_bookings,
+        "cancelled_bookings": cancelled_bookings,
+        "lead_to_booking_percent": conversion,
+    }
+
+
+def score_items(metrics: dict) -> list[dict]:
+    items: list[dict] = []
+
+    def add(name: str, points: int, max_points: int, status: str, next_step: str) -> None:
+        items.append({
+            "name": name,
+            "points": points,
+            "max_points": max_points,
+            "status": status,
+            "next_step": next_step,
+        })
+
+    add(
+        "Инфраструктура",
+        (5 if BOT_TOKEN else 0) + (4 if ADMIN_ID else 0) + (3 if DB_PATH.exists() else 0),
+        12,
+        "ok" if BOT_TOKEN and ADMIN_ID and DB_PATH.exists() else "needs_setup",
+        "Проверить BOT_TOKEN, ADMIN_ID и доступность SQLite-базы.",
+    )
+    add(
+        "Воронка продаж",
+        17,
+        20,
+        "ok",
+        "Усилить первый экран: больше заботы, диагностика и быстрый переход к записи.",
+    )
+    add(
+        "Запись",
+        12,
+        16,
+        "manual_plus_dikidi",
+        "Подключить реальный API Dikidi, когда будет доступ; пока работает локальная запись и ссылка.",
+    )
+    add(
+        "Доверие",
+        13,
+        14,
+        "ok",
+        "Добавить больше кейсов, сертификатов и коротких отзывов прямо в ответы.",
+    )
+    add(
+        "Голос",
+        2,
+        10,
+        "needs_voice",
+        "Добавить voice-ответы для приветствия, цены, записи и отличия метода.",
+    )
+    analytics_points = 5
+    if metrics["leads_period"] >= 10:
+        analytics_points += 3
+    if metrics["lead_to_booking_percent"] > 0:
+        analytics_points += 4
+    add(
+        "Аналитика",
+        analytics_points,
+        14,
+        "ok" if analytics_points >= 10 else "needs_data",
+        "Смотреть /score каждую неделю: лиды, заявки и конверсию лид -> запись.",
+    )
+    add(
+        "Операционное управление",
+        8,
+        14,
+        "basic",
+        "Добавить задачи администратора: кому перезвонить, кого вернуть, кто ждёт подтверждения.",
+    )
+    return items
+
+
+def bot_score_text(metrics: dict) -> str:
+    items = score_items(metrics)
+    points = sum(item["points"] for item in items)
+    max_points = sum(item["max_points"] for item in items)
+    score = round(points * 10 / max_points, 1)
+    top_actions = sorted(items, key=lambda item: item["max_points"] - item["points"], reverse=True)[:3]
+    lines = [
+        f"Оценка бота: {score}/10",
+        f"Баллы: {points}/{max_points}",
+        "",
+        f"За {metrics['days']} дн.: лиды {metrics['leads_period']}, заявки {metrics['bookings_period']}, "
+        f"конверсия {metrics['lead_to_booking_percent']}%",
+        f"Всего: лиды {metrics['leads_total']}, заявки {metrics['bookings_total']}, "
+        f"активные {metrics['active_bookings']}, отмены {metrics['cancelled_bookings']}",
+        "",
+        "Разбор:",
+    ]
+    for item in items:
+        lines.append(f"- {item['name']}: {item['points']}/{item['max_points']} ({item['status']})")
+    lines.append("")
+    lines.append("Что улучшить первым:")
+    for index, item in enumerate(top_actions, start=1):
+        lines.append(f"{index}. {item['name']}: {item['next_step']}")
+    lines.append("")
+    lines.append("Команды: /score, /orchestra <задача>, /cert")
+    return "\n".join(lines)
+
+
+ORCHESTRA_ROLES = (
+    {
+        "name": "Контент-агент",
+        "triggers": ("текст", "пост", "привет", "скрипт", "оффер", "лендинг", "гайд"),
+        "task": "собрать понятный текст с заботой, ценностью и мягким призывом к записи",
+        "result": "черновик текста и 2 варианта CTA",
+        "skills": "copywriting, редактура",
+    },
+    {
+        "name": "Агент продаж",
+        "triggers": ("продаж", "клиент", "лид", "заявк", "цена", "запис", "сертификат"),
+        "task": "понять стадию клиента, возражение и лучший следующий шаг",
+        "result": "предложение и безопасный CTA",
+        "skills": "квалификация, возражения, оффер",
+    },
+    {
+        "name": "Операционный агент",
+        "triggers": ("задач", "crm", "таблиц", "напомин", "админ", "статус", "контроль"),
+        "task": "разложить работу на задачи, сроки и статусы",
+        "result": "план действий и контрольные точки",
+        "skills": "CRM, automation, контроль сроков",
+    },
+    {
+        "name": "Исследователь",
+        "triggers": ("сайт", "отзыв", "конкур", "источник", "провер", "факт"),
+        "task": "проверить факты, ссылки и неизвестные места",
+        "result": "краткая справка: факты, гипотезы, что уточнить",
+        "skills": "web research, fact check",
+    },
+)
+
+
+def orchestra_text(task: str) -> str:
+    clean_task = task.strip() or "задача не указана"
+    value = clean_task.lower()
+    selected = [
+        role for role in ORCHESTRA_ROLES
+        if any(trigger in value for trigger in role["triggers"])
+    ][:2]
+    if not selected:
+        selected = [ORCHESTRA_ROLES[1]]
+
+    lines = [
+        "Агент-оркестратор",
+        "",
+        f"Цель: {clean_task}",
+        "",
+        "Процесс:",
+        "1. Принять задачу и ожидаемый результат.",
+        "2. Взять минимальную цепочку: оркестратор, 1-2 субагента, контролёр.",
+        "3. Передать каждому только нужные данные и минимальные права.",
+        "4. Собрать результат и проверить факты, тон, ограничения.",
+        "5. Финальное действие подтверждает человек.",
+        "",
+        "Поручения:",
+        "1. Оркестратор: держит цель, порядок и финальную сборку.",
+    ]
+    for index, role in enumerate(selected, start=2):
+        lines.append(
+            f"{index}. {role['name']}: {role['task']}.\n"
+            f"   Скиллы: {role['skills']}.\n"
+            f"   Результат: {role['result']}."
+        )
+    lines.append(
+        f"{len(selected) + 2}. Контролёр: проверяет факты, тон, риски и соответствие задаче."
+    )
+    lines.extend([
+        "",
+        "Правило безопасности:",
+        "- субагенты не отправляют сообщения клиентам самостоятельно;",
+        "- не публикуют посты;",
+        "- не меняют цены и скидки;",
+        "- не удаляют данные и не меняют записи без подтверждения администратора.",
+    ])
+    return "\n".join(lines)
+
+
 # ==================== СЛОТЫ ====================
 
 def generate_possible_slots(duration_min: int) -> list[str]:
@@ -751,6 +956,38 @@ async def cmd_cancel(message: Message, state: FSMContext):
 
 def _is_admin(user_id: int) -> bool:
     return bool(ADMIN_ID and str(user_id) == str(ADMIN_ID))
+
+
+@router.message(Command("score"))
+async def cmd_score(message: Message, state: FSMContext):
+    """
+    /score [days] — оценка бота до 10/10 и зоны роста (только админ).
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    parts = message.text.split()
+    days = 30
+    if len(parts) > 1 and parts[1].isdigit():
+        days = int(parts[1])
+    metrics = await admin_metrics(days)
+    await message.answer(bot_score_text(metrics))
+
+
+@router.message(Command("orchestra"))
+@router.message(Command("orchestrator"))
+async def cmd_orchestra(message: Message, state: FSMContext):
+    """
+    /orchestra <задача> — разложить задачу на субагентов (только админ).
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    command = message.text.split(maxsplit=1)
+    task = command[1] if len(command) > 1 else ""
+    await message.answer(orchestra_text(task))
 
 
 @router.message(Command("cert"))
