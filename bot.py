@@ -32,7 +32,13 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from certificate import generate_certificate
-from calendar_utils import calendar_sync_status_text, calendars_configured, get_external_busy
+from calendar_utils import (
+    calendar_sync_status_text,
+    calendars_configured,
+    get_external_busy,
+    get_uniq_available_windows,
+    uniq_availability_configured,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from dotenv import load_dotenv
 
@@ -473,15 +479,31 @@ def is_slot_free(slot: str, duration_min: int, occupied: list) -> bool:
     return True
 
 
+def is_slot_inside_windows(slot: str, duration_min: int, windows: list) -> bool:
+    if not windows:
+        return False
+    start = time_to_minutes(slot)
+    end = start + duration_min
+    for window in windows:
+        ws = time_to_minutes(window["time"])
+        we = ws + window["duration_min"]
+        if start >= ws and end <= we:
+            return True
+    return False
+
+
 async def get_free_slots(date: str, duration_min: int) -> list[str]:
     all_slots = generate_possible_slots(duration_min)
-    local_occupied, manual_blocks, external_occupied = await asyncio.gather(
+    local_occupied, manual_blocks, external_occupied, uniq_windows = await asyncio.gather(
         get_bookings_for_date(date),
         get_resource_blocks_for_date(date),
         get_external_busy(date, duration_min),
+        get_uniq_available_windows(date, duration_min),
     )
     occupied = local_occupied + manual_blocks + external_occupied
     free = [s for s in all_slots if is_slot_free(s, duration_min, occupied)]
+    if uniq_availability_configured():
+        free = [s for s in free if is_slot_inside_windows(s, duration_min, uniq_windows)]
     today = datetime.now().strftime("%d.%m.%Y")
     if date == today:
         now = datetime.now().hour * 60 + datetime.now().minute

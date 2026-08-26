@@ -2,14 +2,24 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
-TIMEZONE = ZoneInfo(os.getenv("CALENDAR_TIMEZONE", "Europe/Moscow"))
+def _load_timezone() -> ZoneInfo | timezone:
+    name = os.getenv("CALENDAR_TIMEZONE", "Europe/Moscow")
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        if name == "Europe/Moscow":
+            return timezone(timedelta(hours=3), name)
+        return timezone.utc
+
+
+TIMEZONE = _load_timezone()
 CALENDAR_SYNC_TIMEOUT = float(os.getenv("CALENDAR_SYNC_TIMEOUT", "8"))
 SLOT_STEP_MINUTES = 30
 
@@ -28,6 +38,8 @@ DIKIDI_GOOGLE_CALENDAR_ID = os.getenv("DIKIDI_GOOGLE_CALENDAR_ID") or GOOGLE_CAL
 # Optional JSON feeds. URL may include {date} as DD.MM.YYYY or {date_iso} as YYYY-MM-DD.
 UNIQ_CALENDAR_URL = os.getenv("UNIQ_CALENDAR_URL")
 UNIQ_CALENDAR_TOKEN = os.getenv("UNIQ_CALENDAR_TOKEN")
+UNIQ_AVAILABILITY_URL = os.getenv("UNIQ_AVAILABILITY_URL")
+UNIQ_AVAILABILITY_TOKEN = os.getenv("UNIQ_AVAILABILITY_TOKEN") or UNIQ_CALENDAR_TOKEN
 DIKIDI_CALENDAR_URL = os.getenv("DIKIDI_CALENDAR_URL")
 DIKIDI_CALENDAR_TOKEN = os.getenv("DIKIDI_CALENDAR_TOKEN")
 
@@ -68,7 +80,7 @@ def _extract_calendar_events(payload: object) -> list[dict]:
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
         return []
-    for key in ("items", "events", "records", "appointments", "bookings"):
+    for key in ("items", "events", "records", "appointments", "bookings", "slots", "windows", "availability"):
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
@@ -265,6 +277,29 @@ async def _busy_from_json_feed(
     return busy
 
 
+async def get_uniq_available_windows(date: str, duration_min: int) -> list[dict]:
+    if not UNIQ_AVAILABILITY_URL:
+        return []
+    try:
+        payload = await asyncio.to_thread(
+            _fetch_calendar_json,
+            UNIQ_AVAILABILITY_URL,
+            UNIQ_AVAILABILITY_TOKEN,
+            date,
+        )
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+
+    windows: list[dict] = []
+    for event in _extract_calendar_events(payload):
+        if not _event_blocks_required_resource(event):
+            continue
+        item = _busy_from_event(event, date, duration_min)
+        if item:
+            windows.append(item)
+    return windows
+
+
 async def get_external_busy(date: str, duration_min: int) -> list[dict]:
     dikidi_google, dikidi_feed, uniq_google, uniq_feed = await asyncio.gather(
         _busy_from_google_calendar(date, DIKIDI_GOOGLE_SERVICE_ACCOUNT_JSON, DIKIDI_GOOGLE_CALENDAR_ID),
@@ -277,22 +312,31 @@ async def get_external_busy(date: str, duration_min: int) -> list[dict]:
 
 def calendars_configured() -> bool:
     has_dikidi = bool(DIKIDI_GOOGLE_CALENDAR_ID or DIKIDI_CALENDAR_URL)
-    has_uniq = bool(UNIQ_GOOGLE_CALENDAR_ID or UNIQ_CALENDAR_URL)
+    has_uniq = bool(UNIQ_GOOGLE_CALENDAR_ID or UNIQ_CALENDAR_URL or UNIQ_AVAILABILITY_URL)
     return has_dikidi and has_uniq
+
+
+def uniq_availability_configured() -> bool:
+    return bool(UNIQ_AVAILABILITY_URL)
 
 
 async def calendar_sync_status_text(date: str | None = None) -> str:
     target_date = date or datetime.now(TIMEZONE).strftime("%d.%m.%Y")
-    busy = await get_external_busy(target_date, 60)
+    busy, uniq_windows = await asyncio.gather(
+        get_external_busy(target_date, 60),
+        get_uniq_available_windows(target_date, 60),
+    )
     return (
         "Синхронизация календарей:\n\n"
         f"Uni-Q Google Calendar: {'задан' if UNIQ_GOOGLE_CALENDAR_ID else 'не задан'}\n"
         f"Uni-Q JSON URL: {'задан' if UNIQ_CALENDAR_URL else 'не задан'}\n"
+        f"Uni-Q free windows URL: {'задан' if UNIQ_AVAILABILITY_URL else 'не задан'}\n"
         f"Uni-Q resources: {', '.join(UNIQ_REQUIRED_RESOURCES) if UNIQ_REQUIRED_RESOURCES else 'все'}\n"
         f"Мой DIKIDI Google Calendar: {'задан' if DIKIDI_GOOGLE_CALENDAR_ID else 'не задан'}\n"
         f"Мой DIKIDI JSON URL: {'задан' if DIKIDI_CALENDAR_URL else 'не задан'}\n"
         f"Дата проверки: {target_date}\n"
         f"Внешних занятых интервалов найдено: {len(busy)}\n\n"
+        f"Свободных окон Uni-Q найдено: {len(uniq_windows)}\n\n"
         "Для режима без наложений нужны два источника: календарь Uni-Q по кушетке/душу "
         "и календарь Массаж будущего/DIKIDI."
     )

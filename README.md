@@ -64,7 +64,12 @@ python bot.py
 
 ## Синхронизация календарей Uni-Q + DIKIDI
 
-Бот показывает свободные слоты только если время не занято:
+Бот показывает свободные слоты только если время проходит два фильтра:
+
+1. попадает в свободное окно Uni-Q, если задан `UNIQ_AVAILABILITY_URL`;
+2. не занято в DIKIDI/«Массаж будущего», локальных заявках и блокировках.
+
+Что считается занятым:
 
 1. в локальных заявках SQLite;
 2. в ручных блокировках Uni-Q;
@@ -85,15 +90,22 @@ DIKIDI поддерживает синхронизацию журнала зап
 - `DIKIDI_GOOGLE_CALENDAR_ID` — Google Calendar ID календаря DIKIDI/Массаж будущего.
 - `UNIQ_CALENDAR_URL` — JSON-фид занятости Uni-Q. Можно использовать `{date}` или `{date_iso}` в URL.
 - `UNIQ_CALENDAR_TOKEN` — bearer-токен, если нужен.
+- `UNIQ_AVAILABILITY_URL` — JSON-фид свободных окон Uni-Q. Если задан, бот показывает только слоты внутри этих окон.
+- `UNIQ_AVAILABILITY_TOKEN` — bearer-токен для фида свободных окон Uni-Q, если нужен.
 - `UNIQ_REQUIRED_RESOURCES` — ресурсы через запятую, по умолчанию `кушетка,душ`.
 - `DIKIDI_CALENDAR_URL` — JSON-фид занятости вашего DIKIDI.
 - `DIKIDI_CALENDAR_TOKEN` — bearer-токен, если нужен.
 - `CALENDAR_TIMEZONE` — часовой пояс, по умолчанию `Europe/Moscow`.
 - `CALENDAR_SYNC_TIMEOUT` — таймаут запроса, по умолчанию `8`.
 
-Минимальный рабочий вариант: задать `GOOGLE_SERVICE_ACCOUNT_JSON`,
-`UNIQ_GOOGLE_CALENDAR_ID` и `DIKIDI_GOOGLE_CALENDAR_ID`. Если у Uni-Q нет
-Google Calendar, можно вместо этого использовать `UNIQ_CALENDAR_URL`.
+Минимальный рабочий вариант с Google Calendar: задать `GOOGLE_SERVICE_ACCOUNT_JSON`,
+`UNIQ_GOOGLE_CALENDAR_ID` и `DIKIDI_GOOGLE_CALENDAR_ID`.
+
+Если у Uni-Q нет Google Calendar, но есть список свободного времени, используйте
+`UNIQ_AVAILABILITY_URL`: бот будет показывать только свободные окна Uni-Q и
+вычитать занятость DIKIDI/«Массаж будущего».
+
+Если у Uni-Q есть только занятость, используйте `UNIQ_CALENDAR_URL`.
 
 Если доступа к календарю Uni-Q нет, используйте ручные блокировки:
 
@@ -106,8 +118,9 @@ Google Calendar, можно вместо этого использовать `UN
 Такие блокировки хранятся в SQLite и не показывают клиенту занятое время.
 
 Фид может вернуть список событий или объект с ключом `items`, `events`,
-`records`, `appointments` или `bookings`. Событие может содержать `start`/`end`
-в ISO-формате или `date` + `time`, а также `duration_min`.
+`records`, `appointments`, `bookings`, `slots`, `windows` или `availability`.
+Событие может содержать `start`/`end` в ISO-формате или `date` + `time`, а
+также `duration_min`.
 
 Готово к использованию.
 
