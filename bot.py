@@ -32,7 +32,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from certificate import generate_certificate
-from calendar_utils import get_google_busy
+from calendar_utils import calendar_sync_status_text, calendars_configured, get_external_busy
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from dotenv import load_dotenv
 
@@ -250,10 +250,10 @@ def score_items(metrics: dict) -> list[dict]:
     )
     add(
         "Запись",
-        12,
+        16 if calendars_configured() else 12,
         16,
-        "manual_plus_dikidi",
-        "Подключить реальный API Dikidi, когда будет доступ; пока работает локальная запись и ссылка.",
+        "synced" if calendars_configured() else "manual_plus_dikidi",
+        "Проверить /sync_status: слоты должны учитывать Uni-Q и календарь Массаж будущего без наложений.",
     )
     add(
         "Доверие",
@@ -315,7 +315,7 @@ def bot_score_text(metrics: dict) -> str:
     for index, item in enumerate(top_actions, start=1):
         lines.append(f"{index}. {item['name']}: {item['next_step']}")
     lines.append("")
-    lines.append("Команды: /score, /orchestra <задача>, /cert")
+    lines.append("Команды: /score, /sync_status, /orchestra <задача>, /cert")
     return "\n".join(lines)
 
 
@@ -426,12 +426,11 @@ def is_slot_free(slot: str, duration_min: int, occupied: list) -> bool:
 
 async def get_free_slots(date: str, duration_min: int) -> list[str]:
     all_slots = generate_possible_slots(duration_min)
-    occupied = await get_bookings_for_date(date)
-    try:
-       google_busy = await get_google_busy(date)
-       occupied.extend(google_busy)
-    except Exception as e:
-        logger.error(f"Google Calendar error: {e}")
+    local_occupied, external_occupied = await asyncio.gather(
+        get_bookings_for_date(date),
+        get_external_busy(date, duration_min),
+    )
+    occupied = local_occupied + external_occupied
     free = [s for s in all_slots if is_slot_free(s, duration_min, occupied)]
     today = datetime.now().strftime("%d.%m.%Y")
     if date == today:
@@ -1056,6 +1055,20 @@ async def cmd_orchestra(message: Message, state: FSMContext):
     command = message.text.split(maxsplit=1)
     task = command[1] if len(command) > 1 else ""
     await message.answer(orchestra_text(task))
+
+
+@router.message(Command("sync_status"))
+async def cmd_sync_status(message: Message, state: FSMContext):
+    """
+    /sync_status [ДД.ММ.ГГГГ] — проверить внешнюю синхронизацию календарей.
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    parts = message.text.split()
+    date = parts[1] if len(parts) > 1 and re.match(r"^\d{2}\.\d{2}\.\d{4}$", parts[1]) else None
+    await message.answer(await calendar_sync_status_text(date))
 
 
 @router.message(Command("cert"))
