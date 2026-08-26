@@ -38,7 +38,6 @@ day,
 datetime.min.time(),
 tzinfo=TIMEZONE,
 )
-
 end = start + timedelta(days=1)
 
 events = (
@@ -88,3 +87,4 @@ return occupied
 
 async def get_google_busy(date_str: str) -> list[dict]:
 return await asyncio.to_thread(_load_busy_sync, date_str)
+
