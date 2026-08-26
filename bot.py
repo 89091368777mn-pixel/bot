@@ -32,6 +32,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from certificate import generate_certificate
+from calendar_utils import get_google_busy
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from dotenv import load_dotenv
 
@@ -426,6 +427,11 @@ def is_slot_free(slot: str, duration_min: int, occupied: list) -> bool:
 async def get_free_slots(date: str, duration_min: int) -> list[str]:
     all_slots = generate_possible_slots(duration_min)
     occupied = await get_bookings_for_date(date)
+    try:
+       google_busy = await get_google_busy(date)
+       occupied.extend(google_busy)
+    except Exception as e:
+        logger.error(f"Google Calendar error: {e}")
     free = [s for s in all_slots if is_slot_free(s, duration_min, occupied)]
     today = datetime.now().strftime("%d.%m.%Y")
     if date == today:
