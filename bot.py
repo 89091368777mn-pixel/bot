@@ -127,6 +127,17 @@ async def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS resource_blocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                duration_min INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 
@@ -189,6 +200,44 @@ async def get_bookings_for_date(date: str) -> list:
             (date,),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+
+async def add_resource_block(date: str, time: str, duration_min: int, reason: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO resource_blocks (date, time, duration_min, reason)
+            VALUES (?, ?, ?, ?)
+            """,
+            (date, time, duration_min, reason),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_resource_blocks_for_date(date: str) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, date, time, duration_min, reason
+            FROM resource_blocks
+            WHERE date = ? AND status = 'active'
+            ORDER BY time
+            """,
+            (date,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+
+async def cancel_resource_block(block_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE resource_blocks SET status = 'cancelled' WHERE id = ? AND status = 'active'",
+            (block_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def admin_metrics(days: int = 30) -> dict:
@@ -315,7 +364,7 @@ def bot_score_text(metrics: dict) -> str:
     for index, item in enumerate(top_actions, start=1):
         lines.append(f"{index}. {item['name']}: {item['next_step']}")
     lines.append("")
-    lines.append("Команды: /score, /sync_status, /orchestra <задача>, /cert")
+    lines.append("Команды: /score, /sync_status, /block, /blocks, /unblock, /orchestra <задача>, /cert")
     return "\n".join(lines)
 
 
@@ -426,11 +475,12 @@ def is_slot_free(slot: str, duration_min: int, occupied: list) -> bool:
 
 async def get_free_slots(date: str, duration_min: int) -> list[str]:
     all_slots = generate_possible_slots(duration_min)
-    local_occupied, external_occupied = await asyncio.gather(
+    local_occupied, manual_blocks, external_occupied = await asyncio.gather(
         get_bookings_for_date(date),
+        get_resource_blocks_for_date(date),
         get_external_busy(date, duration_min),
     )
-    occupied = local_occupied + external_occupied
+    occupied = local_occupied + manual_blocks + external_occupied
     free = [s for s in all_slots if is_slot_free(s, duration_min, occupied)]
     today = datetime.now().strftime("%d.%m.%Y")
     if date == today:
@@ -1069,6 +1119,99 @@ async def cmd_sync_status(message: Message, state: FSMContext):
     parts = message.text.split()
     date = parts[1] if len(parts) > 1 and re.match(r"^\d{2}\.\d{2}\.\d{4}$", parts[1]) else None
     await message.answer(await calendar_sync_status_text(date))
+
+
+@router.message(Command("block"))
+async def cmd_block(message: Message, state: FSMContext):
+    """
+    /block ДД.ММ.ГГГГ ЧЧ:ММ МИНУТЫ [причина] — вручную закрыть слот Uni-Q.
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    parts = message.text.split(maxsplit=4)
+    if len(parts) < 4:
+        await message.answer(
+            "Формат:\n"
+            "/block ДД.ММ.ГГГГ ЧЧ:ММ МИНУТЫ [причина]\n\n"
+            "Пример:\n"
+            "/block 28.08.2026 14:00 90 Uni-Q кушетка и душ заняты"
+        )
+        return
+
+    _, date, time, duration_text, *reason_parts = parts
+    if not re.match(r"^\d{2}\.\d{2}\.\d{4}$", date):
+        await message.answer("Дата должна быть в формате ДД.ММ.ГГГГ.")
+        return
+    if not re.match(r"^\d{2}:\d{2}$", time):
+        await message.answer("Время должно быть в формате ЧЧ:ММ.")
+        return
+    try:
+        datetime.strptime(date, "%d.%m.%Y")
+        datetime.strptime(time, "%H:%M")
+        duration_min = int(duration_text)
+    except ValueError:
+        await message.answer("Проверьте дату, время и длительность.")
+        return
+    if duration_min < 15 or duration_min > 600:
+        await message.answer("Длительность должна быть от 15 до 600 минут.")
+        return
+
+    reason = reason_parts[0] if reason_parts else "Uni-Q ресурс занят"
+    block_id = await add_resource_block(date, time, duration_min, reason)
+    await message.answer(
+        f"✅ Блокировка #{block_id} добавлена:\n"
+        f"{date} {time} на {duration_min} мин.\n"
+        f"Причина: {reason}\n\n"
+        "Теперь это время не будет показываться клиентам."
+    )
+
+
+@router.message(Command("blocks"))
+async def cmd_blocks(message: Message, state: FSMContext):
+    """
+    /blocks [ДД.ММ.ГГГГ] — показать ручные блокировки на дату.
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    parts = message.text.split()
+    date = parts[1] if len(parts) > 1 and re.match(r"^\d{2}\.\d{2}\.\d{4}$", parts[1]) else datetime.now().strftime("%d.%m.%Y")
+    blocks = await get_resource_blocks_for_date(date)
+    if not blocks:
+        await message.answer(f"На {date} ручных блокировок нет.")
+        return
+    lines = [f"Ручные блокировки на {date}:"]
+    for block in blocks:
+        lines.append(
+            f"#{block['id']} — {block['time']} на {block['duration_min']} мин. "
+            f"({block['reason'] or 'без причины'})"
+        )
+    lines.append("")
+    lines.append("Удалить: /unblock ID")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("unblock"))
+async def cmd_unblock(message: Message, state: FSMContext):
+    """
+    /unblock ID — снять ручную блокировку.
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    await state.clear()
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Формат: /unblock ID")
+        return
+    block_id = int(parts[1])
+    if await cancel_resource_block(block_id):
+        await message.answer(f"✅ Блокировка #{block_id} снята.")
+    else:
+        await message.answer(f"Блокировка #{block_id} не найдена или уже снята.")
 
 
 @router.message(Command("cert"))
